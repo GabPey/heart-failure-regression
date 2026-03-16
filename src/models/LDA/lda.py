@@ -1,48 +1,28 @@
-"""
-src/models/lda_diagnostics.py
-
-Diagnostic plots for Linear Discriminant Analysis (LDA).
-
-This script focuses on the most useful visualizations for a course project:
-1. Class-wise KDE plots for selected continuous predictors
-2. Pairwise scatter plot colored by class
-3. Distribution of the first LDA projection
-4. Confusion matrix
-5. ROC curve
-
-Example usage
--------------
-from src.models.lda_diagnostics import run_lda_diagnostics
-
-selected_features = [
-    "time",
-    "age_centered",
-    "ejection_fraction_centered",
-    "sodium_creatinine_interaction",
-]
-
-run_lda_diagnostics(
-    df=df,
-    features=selected_features,
-    target="DEATH_EVENT",
-    test_size=0.2,
-    random_state=42,
-)
-"""
-
 from __future__ import annotations
 
 from itertools import combinations
-from typing import Iterable
+from typing import Any
 
 import matplotlib.pyplot as plt
 import pandas as pd
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.metrics import ConfusionMatrixDisplay, RocCurveDisplay
+from sklearn.metrics import (
+    ConfusionMatrixDisplay,
+    RocCurveDisplay,
+    accuracy_score,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 from sklearn.model_selection import train_test_split
 
 
 def _validate_inputs(df: pd.DataFrame, features: list[str], target: str) -> None:
+    """
+    Validate that the dataframe contains the requested features and target.
+    """
     missing_features = [col for col in features if col not in df.columns]
     if missing_features:
         raise ValueError(f"Missing features in dataframe: {missing_features}")
@@ -51,7 +31,25 @@ def _validate_inputs(df: pd.DataFrame, features: list[str], target: str) -> None
         raise ValueError(f"Target column '{target}' not found in dataframe.")
 
     if df[target].nunique() != 2:
-        raise ValueError("This script is designed for binary classification only.")
+        raise ValueError("This module is designed for binary classification only.")
+
+
+def evaluate_binary_classifier(
+    y_true: pd.Series,
+    y_pred: pd.Series,
+    y_proba: pd.Series,
+) -> dict[str, Any]:
+    """
+    Compute standard binary classification metrics.
+    """
+    return {
+        "accuracy": accuracy_score(y_true, y_pred),
+        "precision": precision_score(y_true, y_pred, zero_division=0),
+        "recall": recall_score(y_true, y_pred, zero_division=0),
+        "f1": f1_score(y_true, y_pred, zero_division=0),
+        "auc": roc_auc_score(y_true, y_proba),
+        "confusion_matrix": confusion_matrix(y_true, y_pred),
+    }
 
 
 def plot_class_kdes(
@@ -61,11 +59,7 @@ def plot_class_kdes(
     max_features: int = 4,
 ) -> None:
     """
-    Plot class-wise density-like histograms for the selected features.
-
-    Notes
-    -----
-    This implementation uses matplotlib only, to avoid requiring seaborn.
+    Plot class-wise density-like histograms for selected features.
     """
     features_to_plot = features[:max_features]
     n_features = len(features_to_plot)
@@ -75,7 +69,6 @@ def plot_class_kdes(
 
     ncols = 2
     nrows = (n_features + ncols - 1) // ncols
-
     classes = sorted(df[target].unique())
 
     fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4 * nrows))
@@ -114,11 +107,6 @@ def plot_pairwise_scatter(
 ) -> None:
     """
     Plot a few pairwise scatter plots colored by class.
-
-    Parameters
-    ----------
-    max_pairs : int
-        Maximum number of feature pairs to plot.
     """
     if len(features) < 2:
         print("Skipping pairwise scatter: at least 2 features are required.")
@@ -226,6 +214,83 @@ def plot_roc_curve(
     plt.show()
 
 
+def run_lda_pipeline(
+    X_train: pd.DataFrame,
+    X_test: pd.DataFrame,
+    y_train: pd.Series,
+    y_test: pd.Series,
+    solver: str = "svd",
+    show_confusion_matrix: bool = False,
+    show_roc_curve: bool = False,
+    show_projection: bool = False,
+    target_name: str = "DEATH_EVENT",
+) -> dict[str, Any]:
+    """
+    Train and evaluate LDA using a pre-defined train/test split.
+
+    This is the standardized function to use when comparing LDA against
+    Logistic Regression, KNN, and Naive Bayes.
+    """
+    model = fit_lda(X_train=X_train, y_train=y_train, solver=solver)
+
+    y_pred_train = pd.Series(
+        model.predict(X_train),
+        index=X_train.index,
+        name="y_pred",
+    )
+    y_proba_train = pd.Series(
+        model.predict_proba(X_train)[:, 1],
+        index=X_train.index,
+        name="y_proba",
+    )
+
+    y_pred_test = pd.Series(
+        model.predict(X_test),
+        index=X_test.index,
+        name="y_pred",
+    )
+    y_proba_test = pd.Series(
+        model.predict_proba(X_test)[:, 1],
+        index=X_test.index,
+        name="y_proba",
+    )
+
+    train_metrics = evaluate_binary_classifier(
+        y_train,
+        y_pred_train,
+        y_proba_train,
+    )
+    test_metrics = evaluate_binary_classifier(
+        y_test,
+        y_pred_test,
+        y_proba_test,
+    )
+
+    if show_projection:
+        plot_lda_projection(model=model, X=X_train, y=y_train, target=target_name)
+
+    if show_confusion_matrix:
+        plot_confusion_matrix(y_test=y_test, y_pred=y_pred_test)
+
+    if show_roc_curve:
+        plot_roc_curve(y_test=y_test, y_proba=y_proba_test)
+
+    return {
+        "model_name": "LDA",
+        "model": model,
+        "X_train": X_train,
+        "X_test": X_test,
+        "y_train": y_train,
+        "y_test": y_test,
+        "y_pred_train": y_pred_train,
+        "y_proba_train": y_proba_train,
+        "y_pred_test": y_pred_test,
+        "y_proba_test": y_proba_test,
+        "train_metrics": train_metrics,
+        "test_metrics": test_metrics,
+    }
+
+
 def run_lda_diagnostics(
     df: pd.DataFrame,
     features: list[str],
@@ -249,11 +314,6 @@ def run_lda_diagnostics(
     5. Plot distribution of the first LDA component
     6. Plot confusion matrix
     7. Plot ROC curve
-
-    Returns
-    -------
-    dict[str, object]
-        Dictionary containing fitted model and predictions.
     """
     _validate_inputs(df=df, features=features, target=target)
 
@@ -262,8 +322,18 @@ def run_lda_diagnostics(
 
     stratify_y = y if stratify else None
 
-    plot_class_kdes(df=df, features=features, target=target, max_features=max_kde_features)
-    plot_pairwise_scatter(df=df, features=features, target=target, max_pairs=max_scatter_pairs)
+    plot_class_kdes(
+        df=df,
+        features=features,
+        target=target,
+        max_features=max_kde_features,
+    )
+    plot_pairwise_scatter(
+        df=df,
+        features=features,
+        target=target,
+        max_pairs=max_scatter_pairs,
+    )
 
     X_train, X_test, y_train, y_test = train_test_split(
         X,
@@ -273,25 +343,16 @@ def run_lda_diagnostics(
         stratify=stratify_y,
     )
 
-    model = fit_lda(X_train=X_train, y_train=y_train, solver=solver)
-
-    y_pred_test = pd.Series(model.predict(X_test), index=X_test.index, name="y_pred")
-    y_proba_test = pd.Series(
-        model.predict_proba(X_test)[:, 1],
-        index=X_test.index,
-        name="y_proba",
+    results = run_lda_pipeline(
+        X_train=X_train,
+        X_test=X_test,
+        y_train=y_train,
+        y_test=y_test,
+        solver=solver,
+        show_confusion_matrix=True,
+        show_roc_curve=True,
+        show_projection=True,
+        target_name=target,
     )
 
-    plot_lda_projection(model=model, X=X_train, y=y_train, target=target)
-    plot_confusion_matrix(y_test=y_test, y_pred=y_pred_test)
-    plot_roc_curve(y_test=y_test, y_proba=y_proba_test)
-
-    return {
-        "model": model,
-        "X_train": X_train,
-        "X_test": X_test,
-        "y_train": y_train,
-        "y_test": y_test,
-        "y_pred_test": y_pred_test,
-        "y_proba_test": y_proba_test,
-    }
+    return results

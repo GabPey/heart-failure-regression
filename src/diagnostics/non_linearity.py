@@ -34,7 +34,7 @@ def plot_logit_vs_feature(
 
     for idx, feature in enumerate(features):
         ax = axes[idx]
-        x_vals = df[feature].values
+        x_vals = df[feature].to_numpy()
 
         ax.scatter(x_vals, logit_pred, alpha=0.4)
 
@@ -42,9 +42,9 @@ def plot_logit_vs_feature(
         ax.plot(smooth[:, 0], smooth[:, 1])
 
         ax.set_xlabel(feature)
-        ax.grid(True)
         ax.set_ylabel("Logit(predicted probability)")
         ax.set_title(f"Logit vs {feature}")
+        ax.grid(True)
 
     for idx in range(n_features, len(axes)):
         fig.delaxes(axes[idx])
