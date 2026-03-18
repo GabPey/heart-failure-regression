@@ -27,6 +27,9 @@ def build_features(df):
     # to reduce collinearity we are going to center the age and ejection fraction variables before creating the interaction.
     df["age_centered"] = df["age"] - df["age"].mean()
     df["ejection_fraction_centered"] = df["ejection_fraction"] - df["ejection_fraction"].mean()
+    df["creatinine_phosphokinase_centered"] = df["creatinine_phosphokinase"] - df["creatinine_phosphokinase"].mean()
+    # NOTE: Laure proposes:
+    df["cpk_ejection"] = -df["creatinine_phosphokinase_centered"] * df["ejection_fraction_centered"] 
     df["age_ejection_interaction"] = df["age_centered"] * df["ejection_fraction_centered"]
 
     # Interactions between ejection fraction and serum creatinine. 
@@ -51,6 +54,6 @@ def build_features(df):
 
     # We also drop ejection fraction after centering to reduce collinearity, as the interaction captures its effect.
     df = df.drop(columns=["ejection_fraction"])
-    
+    df = df.drop(columns=["creatinine_phosphokinase"])
     return df
 
